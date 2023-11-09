@@ -18,3 +18,9 @@ pip install motile
 ```sh
 pip install jupytext zarr
 ```
+
+## To run script as notebook
+- run jupyter lab (make sure jupytext extension is enabled)
+- Right click on python script `run_motile.py`
+- Open with -> jupytext notebook
+Note: we are using the format "percent script"
