@@ -24,6 +24,7 @@ import networkx as nx
 import numpy as np
 from napari_graph import UndirectedGraph
 from skimage.io import imread
+import toml
 
 import motile
 
@@ -31,11 +32,12 @@ import motile
 from napari_utils import to_napari_tracks_layer, load_mskcc_confocal_tracks
 
 # %%
-DATA_PATH = Path("~/data/mskcc-confocal/mskcc_confocal_s1").expanduser()
-IMAGE_PATH = DATA_PATH / "images"
-IMAGE_FILENAME = "mskcc_confocal_s1_t{time:03}.tif"
-MASK_PATH = DATA_PATH / "tracks" / "mskcc_confocal_s1_mask.hdf"
-TRACKS_PATH = DATA_PATH / "tracks" / "tracks.txt"
+config_file = "configs/cmm_config.toml"
+config = toml.load(config_file)
+DATA_PATH = Path(config['base']).expanduser()
+IMAGE_PATH = DATA_PATH / config['image_dir']
+IMAGE_FILENAME = config['image_filename']
+TRACKS_PATH = DATA_PATH / config['tracks']
 
 
 # %%
@@ -48,11 +50,11 @@ def load_images(frames=None):
             if image_file in image_files:
                 filtered.append(image_file)
         image_files = filtered
+    print("starting to load images")
     start_time = time.time()
-    images = [imread(imfile) for imfile in image_files]
+    images = np.array([imread(imfile) for imfile in image_files])
     end_time = time.time()
     print(f"Took {end_time - start_time} seconds to load data at {IMAGE_PATH}")
-    images = np.array(images)
     print(images.shape)
     print(images.dtype)
     return images
