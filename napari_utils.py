@@ -26,6 +26,10 @@ def _convert_types(row):
 
 def load_mskcc_confocal_tracks(tracks_path, frames=None):
     """Load tracks from a csv to a networkx graph.
+    Args:
+        tracks_path (str): path to tracks file
+        frames (tuple): Tuple of start frame, end frame to limit the tracks to
+        these time points. Includes start frame, excludes end frame.
     """
     graph = nx.DiGraph()
     with open(tracks_path, 'r') as f:

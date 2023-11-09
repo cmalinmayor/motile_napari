@@ -49,9 +49,10 @@ def load_images(frames=None):
                 filtered.append(image_file)
         image_files = filtered
     start_time = time.time()
-    images = np.array([imread(imfile) for imfile in image_files])
+    images = [imread(imfile) for imfile in image_files]
     end_time = time.time()
     print(f"Took {end_time - start_time} seconds to load data at {IMAGE_PATH}")
+    images = np.array(images)
     print(images.shape)
     print(images.dtype)
     return images
@@ -72,14 +73,43 @@ gt_track_data, track_props, track_edges = to_napari_tracks_layer(
 viewer = napari.Viewer()
 viewer.add_image(raw_data, name="raw", scale=([5, 1, 1]))
 viewer.add_tracks(gt_track_data, properties=track_props, graph=track_edges, name='gt_tracks')
-napari.run()
 
+
+# %%
+napari.run()
 
 # %% [markdown]
 # ## Delete GT edges
 #  - Also determine max length of gt edges to use as distance threshold (plus 10%)
 
 # %%
+nodes_only = nx.create_empty_copy(gt_track_graph, with_data=True)
+nodes_only
+
+
+# %%
+def get_location(node_data, loc_keys=('z', 'y', 'x')):
+    return [node[k] for k in loc_keys]
+
+
+# %%
+import math
+def get_max_distance(graph):
+    max_dist = 0
+    for source, target in graph.edges:
+        source_loc = get_location(graph.nodes[source])
+        target_loc = get_location(graph.nodes[target])
+        dist = math.dist(source_loc , target_loc)
+        if dist > max_dist:
+            max_dist = dist
+
+    return max_dist
+get_max_distance(gt_track_graph)
+
+# %%
+max_edge_distance = get_max_distance(gt_track_graph)
+dist_threshold = max_edge_distance * 1.1
+dist_threshold
 
 # %% [markdown]
 # ## Create candidate graph by adding edges from t to t+1 within a distance threshold
@@ -87,7 +117,8 @@ napari.run()
 # %%
 
 # %% [markdown]
-# # Create solver
+# # Solve with motile!
+# - Create solver
 # - add constraints (max children=2, max_parents=2)
 # - add costs - edge distance, cost appear, (cost disappear or divide maybe)
 # - solve
