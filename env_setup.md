@@ -16,5 +16,5 @@ pip install motile
 
 ## Misc Other Packages
 ```sh
-pip install jupytext
+pip install jupytext zarr
 ```

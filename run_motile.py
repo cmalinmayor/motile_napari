@@ -16,20 +16,21 @@
 
 # %%
 import csv
+import math
 import time
 from pathlib import Path
 
+import motile
 import napari
 import networkx as nx
 import numpy as np
+import toml
+import zarr
 from napari_graph import UndirectedGraph
 from skimage.io import imread
-import toml
-
-import motile
 
 # %%
-from napari_utils import to_napari_tracks_layer, load_mskcc_confocal_tracks
+from napari_utils import load_mskcc_confocal_tracks, to_napari_tracks_layer
 
 # %%
 config_file = "configs/cmm_config.toml"
@@ -38,6 +39,7 @@ DATA_PATH = Path(config['base']).expanduser()
 IMAGE_PATH = DATA_PATH / config['image_dir']
 IMAGE_FILENAME = config['image_filename']
 TRACKS_PATH = DATA_PATH / config['tracks']
+ZARR_PATH = DATA_PATH / config['zarr_dir'] if 'zarr_dir' in config else None
 
 
 # %%
@@ -59,22 +61,33 @@ def load_images(frames=None):
     print(images.dtype)
     return images
 
+# %%
+
+
+def load_zarr():
+    f = zarr.open(ZARR_PATH)
+    return f['images']
+
 
 # %%
-raw_data = load_images()
+if ZARR_PATH is not None:
+    raw_data = load_zarr()
+else:
+    raw_data = load_images()
 
 # %%
 gt_track_graph = load_mskcc_confocal_tracks(TRACKS_PATH)
 
 # %%
 gt_track_data, track_props, track_edges = to_napari_tracks_layer(
-        gt_track_graph, location_keys=('z', 'y', 'x'), properties=('radius'))
+    gt_track_graph, location_keys=('z', 'y', 'x'), properties=('radius'))
 
 
 # %%
 viewer = napari.Viewer()
 viewer.add_image(raw_data, name="raw", scale=([5, 1, 1]))
-viewer.add_tracks(gt_track_data, properties=track_props, graph=track_edges, name='gt_tracks')
+viewer.add_tracks(gt_track_data, properties=track_props,
+                  graph=track_edges, name='gt_tracks')
 
 
 # %%
@@ -95,17 +108,20 @@ def get_location(node_data, loc_keys=('z', 'y', 'x')):
 
 
 # %%
-import math
+
+
 def get_max_distance(graph):
     max_dist = 0
     for source, target in graph.edges:
         source_loc = get_location(graph.nodes[source])
         target_loc = get_location(graph.nodes[target])
-        dist = math.dist(source_loc , target_loc)
+        dist = math.dist(source_loc, target_loc)
         if dist > max_dist:
             max_dist = dist
 
     return max_dist
+
+
 get_max_distance(gt_track_graph)
 
 # %%
