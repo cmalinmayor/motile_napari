@@ -1,0 +1,3 @@
+base = "/Volumes/funke/data/mskcc_confocal_s1/"
+zarr_dir = "mskcc_confocal_s1.zarr"
+tracks = "tracks/tracks.txt"

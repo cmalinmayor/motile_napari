@@ -1,4 +1,0 @@
-base = "~/data/mskcc-confocal/mskcc_confocal_s1"
-image_dir = "images"
-image_filename = "mskcc_confocal_s1_t{time:03}.tif"
-tracks = "tracks/tracks.txt"

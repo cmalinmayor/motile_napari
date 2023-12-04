@@ -44,7 +44,7 @@ def load_mskcc_confocal_tracks(tracks_path, frames=None):
             cell_id = cell['cell_id']
             graph.add_node(cell['cell_id'], **cell)
             parent_id = cell['parent_id']
-            if parent_id != -1:
+            if parent_id != -1 and time > frames[0]:
                 graph.add_edge(parent_id, cell_id)
     return graph
 
