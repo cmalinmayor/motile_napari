@@ -14,9 +14,14 @@ conda install -c conda-forge -c funkelab -c gurobi ilpy
 pip install motile
 ```
 
+## Install Traccuracy
+```sh
+pip install 'git+https://github.com/Janelia-Trackathon-2023/traccuracy'
+```
+
 ## Misc Other Packages
 ```sh
-pip install jupytext zarr
+pip install jupytext zarr pre-commit
 ```
 
 ## To run script as notebook
