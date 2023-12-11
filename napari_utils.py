@@ -15,8 +15,8 @@ def _convert_types(row):
         dict: Same row with the types converted from strings to ints/floats
         for the appropriate keys.
     """
-    int_vals = ['t', 'cell_id', 'parent_id', 'track_id', 'div_state']
-    float_vals = ['z', 'y', 'x', 'radius']
+    int_vals = ["t", "cell_id", "parent_id", "track_id", "div_state"]
+    float_vals = ["z", "y", "x", "radius"]
     for k in int_vals:
         row[k] = int(row[k])
     for k in float_vals:
@@ -32,8 +32,8 @@ def load_mskcc_confocal_tracks(tracks_path, frames=None):
         these time points. Includes start frame, excludes end frame.
     """
     graph = nx.DiGraph()
-    with open(tracks_path, 'r') as f:
-        reader = csv.DictReader(f, delimiter='\t')
+    with open(tracks_path, "r") as f:
+        reader = csv.DictReader(f, delimiter="\t")
         # t	z	y	x	cell_id	parent_id	track_id	radius	name	div_state
         for cell in reader:
             cell = _convert_types(cell)
@@ -41,9 +41,9 @@ def load_mskcc_confocal_tracks(tracks_path, frames=None):
                 time = cell["t"]
                 if time < frames[0] or time >= frames[1]:
                     continue
-            cell_id = cell['cell_id']
-            graph.add_node(cell['cell_id'], **cell)
-            parent_id = cell['parent_id']
+            cell_id = cell["cell_id"]
+            graph.add_node(cell["cell_id"], **cell)
+            parent_id = cell["parent_id"]
             if parent_id != -1 and time > frames[0]:
                 graph.add_edge(parent_id, cell_id)
     return graph
@@ -58,7 +58,7 @@ def assign_tracklet_ids(graph):
         graph (nx.DiGraph): A networkx graph with a tracking solution
 
     Returns:
-        nx.DiGraph: The same graph with the tracklet_id assigned. Probably 
+        nx.DiGraph: The same graph with the tracklet_id assigned. Probably
         occurrs in place but returned just to be clear.
     """
     graph_copy = graph.copy()
@@ -76,13 +76,16 @@ def assign_tracklet_ids(graph):
     track_id = 0
     for tracklet in nx.weakly_connected_components(graph_copy):
         nx.set_node_attributes(
-            graph, {node: {"tracklet_id": track_id} for node in tracklet})
+            graph, {node: {"tracklet_id": track_id} for node in tracklet}
+        )
         track_id += 1
     return graph, intertrack_edges
 
 
-def to_napari_tracks_layer(graph, frame_key="t", location_keys=("y", "x"), properties=()):
-    """Function to take a networkx graph and return the data needed to add to 
+def to_napari_tracks_layer(
+    graph, frame_key="t", location_keys=("y", "x"), properties=()
+):
+    """Function to take a networkx graph and return the data needed to add to
     a napari tracks layer.
 
     Args:
@@ -110,21 +113,20 @@ def to_napari_tracks_layer(graph, frame_key="t", location_keys=("y", "x"), prope
             parents, but only one child) in the case of track merging.
     """
     napari_data = np.zeros((graph.number_of_nodes(), len(location_keys) + 2))
-    napari_properties = {prop: np.zeros(
-        graph.number_of_nodes()) for prop in properties}
+    napari_properties = {prop: np.zeros(graph.number_of_nodes()) for prop in properties}
     napari_edges = {}
     graph, intertrack_edges = assign_tracklet_ids(graph)
     for index, node in enumerate(graph.nodes(data=True)):
         node_id, data = node
         location = [data[loc_key] for loc_key in location_keys]
-        napari_data[index] = [data['tracklet_id'], data[frame_key]] + location
+        napari_data[index] = [data["tracklet_id"], data[frame_key]] + location
         for prop in properties:
             if prop in data:
                 napari_properties[prop][index] = data[prop]
     napari_edges = {}
     for parent, child in intertrack_edges:
-        parent_track_id = graph.nodes[parent]['tracklet_id']
-        child_track_id = graph.nodes[child]['tracklet_id']
+        parent_track_id = graph.nodes[parent]["tracklet_id"]
+        child_track_id = graph.nodes[child]["tracklet_id"]
         if child_track_id in napari_edges:
             napari_edges[child_track_id].append(parent_track_id)
         else:

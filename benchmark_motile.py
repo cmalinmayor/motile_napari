@@ -1,7 +1,4 @@
-
-import csv
 import math
-import time
 from pathlib import Path
 
 from motile import Solver, TrackGraph
@@ -9,11 +6,8 @@ from motile.constraints import MaxChildren, MaxParents
 from motile.costs import EdgeSelection, Appear
 from motile.variables import NodeSelected, EdgeSelected
 import networkx as nx
-import numpy as np
 import toml
-import zarr
-from skimage.io import imread
-from napari_utils import load_mskcc_confocal_tracks, to_napari_tracks_layer
+from napari_utils import load_mskcc_confocal_tracks
 from tqdm import tqdm
 import pprint
 
@@ -22,8 +16,8 @@ from traccuracy.matchers import Matched
 from traccuracy.metrics import CTCMetrics, DivisionMetrics
 
 
-def get_location(node_data, loc_keys=('z', 'y', 'x')):
-        return [node_data[k] for k in loc_keys]
+def get_location(node_data, loc_keys=("z", "y", "x")):
+    return [node_data[k] for k in loc_keys]
 
 
 def get_max_distance(graph):
@@ -37,12 +31,12 @@ def get_max_distance(graph):
 
     return max_dist
 
+
 if __name__ == "__main__":
     config_file = "configs/cmm_mskcc_confocal.toml"
     config = toml.load(config_file)
-    DATA_PATH = Path(config['base']).expanduser()
-    TRACKS_PATH = DATA_PATH / config['tracks']
-
+    DATA_PATH = Path(config["base"]).expanduser()
+    TRACKS_PATH = DATA_PATH / config["tracks"]
 
     gt_track_graph = load_mskcc_confocal_tracks(TRACKS_PATH, frames=(50, 60))
     print(f"GT nodes: {gt_track_graph.number_of_nodes()}")
@@ -63,7 +57,7 @@ if __name__ == "__main__":
     cand_graph = nodes_only.copy()
     node_frame_dict = {}
     for node, data in cand_graph.nodes(data=True):
-        frame = data['t']
+        frame = data["t"]
         if frame not in node_frame_dict:
             node_frame_dict[frame] = []
         node_frame_dict[frame].append(node)
@@ -90,38 +84,37 @@ if __name__ == "__main__":
     solver.add_constraints(MaxChildren(2))
     solver.add_constraints(MaxParents(1))
 
-    solver.add_costs(
-        EdgeSelection(1, attribute='dist', constant=-20)
-    )
-    solver.add_costs(
-        Appear(30)
-    )
+    solver.add_costs(EdgeSelection(1, attribute="dist", constant=-20))
+    solver.add_costs(Appear(30))
 
     solution = solver.solve()
 
     node_selected = solver.get_variables(NodeSelected)
     edge_selected = solver.get_variables(EdgeSelected)
 
-    selected_nodes = [node for node in cand_graph.nodes if solution[node_selected[node]] > 0.5]
-    selected_edges = [edge for edge in cand_graph.edges if solution[edge_selected[edge]] > 0.5]
+    selected_nodes = [
+        node for node in cand_graph.nodes if solution[node_selected[node]] > 0.5
+    ]
+    selected_edges = [
+        edge for edge in cand_graph.edges if solution[edge_selected[edge]] > 0.5
+    ]
 
     print(f"Selected nodes: {len(selected_nodes)}")
     print(f"Selected edges: {len(selected_edges)}")
     solution_graph = nx.edge_subgraph(cand_graph, selected_edges)
 
-# %% [markdown]
-# # Optional stuff
-# - evaluate with traccuracy
-# - learn weights with ssvm (with small portion of GT)
-# - add fake node score (random from .5 to 1, or something)
+    # %% [markdown]
+    # # Optional stuff
+    # - evaluate with traccuracy
+    # - learn weights with ssvm (with small portion of GT)
+    # - add fake node score (random from .5 to 1, or something)
 
     traccuracy_gt_graph = TrackingGraph(gt_track_graph)
     node_mapping = [(n, n) for n in solution_graph.nodes()]
     matched = Matched(traccuracy_gt_graph, TrackingGraph(solution_graph), node_mapping)
-    
+
     ctc_metrics = CTCMetrics().compute(matched)
     pprint.pprint(ctc_metrics)
 
     div_metrics = DivisionMetrics().compute(matched)
     pprint.pprint(div_metrics)
-

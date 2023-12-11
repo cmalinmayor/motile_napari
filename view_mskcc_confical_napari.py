@@ -38,7 +38,8 @@ if __name__ == "__main__":
     # seg = load_segmentation()
     track_graph = load_mskcc_confocal_tracks(TRACKS_PATH)
     track_data, track_props, track_edges = to_napari_tracks_layer(
-        track_graph, location_keys=('z', 'y', 'x'), properties=('radius'))
+        track_graph, location_keys=("z", "y", "x"), properties=("radius")
+    )
     viewer = napari.Viewer()
     viewer.add_image(raw, name="raw", scale=([5, 1, 1]))
     viewer.add_tracks(track_data, properties=track_props, graph=track_edges)

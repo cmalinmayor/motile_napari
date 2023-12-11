@@ -15,18 +15,17 @@
 # ---
 
 # %%
-import csv
 import math
 import time
 from pathlib import Path
 
-import motile
 import napari
 import networkx as nx
 import numpy as np
 import toml
 import zarr
 from skimage.io import imread
+from tqdm import tqdm
 
 # %%
 from napari.layers import Graph as GraphLayer
@@ -38,11 +37,11 @@ from napari_utils import load_mskcc_confocal_tracks, to_napari_tracks_layer
 # %%
 config_file = "configs/cmm_config.toml"
 config = toml.load(config_file)
-DATA_PATH = Path(config['base']).expanduser()
-IMAGE_PATH = DATA_PATH / config['image_dir']
-IMAGE_FILENAME = config['image_filename']
-TRACKS_PATH = DATA_PATH / config['tracks']
-ZARR_PATH = DATA_PATH / config['zarr_dir'] if 'zarr_dir' in config else None
+DATA_PATH = Path(config["base"]).expanduser()
+IMAGE_PATH = DATA_PATH / config["image_dir"]
+IMAGE_FILENAME = config["image_filename"]
+TRACKS_PATH = DATA_PATH / config["tracks"]
+ZARR_PATH = DATA_PATH / config["zarr_dir"] if "zarr_dir" in config else None
 
 
 # %%
@@ -64,12 +63,13 @@ def load_images(frames=None):
     print(images.dtype)
     return images
 
+
 # %%
 
 
 def load_zarr():
     f = zarr.open(ZARR_PATH)
-    return f['images']
+    return f["images"]
 
 
 # %%
@@ -83,14 +83,16 @@ gt_track_graph = load_mskcc_confocal_tracks(TRACKS_PATH)
 
 # %%
 gt_track_data, track_props, track_edges = to_napari_tracks_layer(
-    gt_track_graph, location_keys=('z', 'y', 'x'), properties=('radius'))
+    gt_track_graph, location_keys=("z", "y", "x"), properties=("radius")
+)
 
 
 # %%
 viewer = napari.Viewer()
 viewer.add_image(raw_data, name="raw", scale=([5, 1, 1]))
-viewer.add_tracks(gt_track_data, properties=track_props,
-                  graph=track_edges, name='gt_tracks')
+viewer.add_tracks(
+    gt_track_data, properties=track_props, graph=track_edges, name="gt_tracks"
+)
 
 
 # %%
@@ -106,7 +108,7 @@ nodes_only
 
 
 # %%
-def get_location(node_data, loc_keys=('z', 'y', 'x')):
+def get_location(node_data, loc_keys=("z", "y", "x")):
     return [node_data[k] for k in loc_keys]
 
 
@@ -135,13 +137,12 @@ dist_threshold
 cand_graph = nodes_only.copy()
 node_frame_dict = {}
 for node, data in cand_graph.nodes(data=True):
-    frame = data['t']
+    frame = data["t"]
     if frame not in node_frame_dict:
         node_frame_dict[frame] = []
     node_frame_dict[frame].append(node)
 
 # %%
-from tqdm import tqdm
 frames = sorted(node_frame_dict.keys())
 for frame in tqdm(frames):
     if frame + 1 not in node_frame_dict:
@@ -194,7 +195,12 @@ num_nodes = napari_id
 edges = [[nx_id_to_napari_id[s], nx_id_to_napari_id[t]] for s, t in cand_graph.edges()]
 
 # %%
-coords = [get_location(cand_graph.nodes[napari_id_to_nx_id[nap_id]], loc_keys=('t', 'z', 'y', 'x')) for nap_id in range(num_nodes)]
+coords = [
+    get_location(
+        cand_graph.nodes[napari_id_to_nx_id[nap_id]], loc_keys=("t", "z", "y", "x")
+    )
+    for nap_id in range(num_nodes)
+]
 
 # %%
 ndim = 4
