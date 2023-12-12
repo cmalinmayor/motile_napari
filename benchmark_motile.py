@@ -46,7 +46,6 @@ if __name__ == "__main__":
     #  - Also determine max length of gt edges to use as distance threshold (plus 10%)
 
     nodes_only = nx.create_empty_copy(gt_track_graph, with_data=True)
-    nodes_only
 
     max_edge_distance = get_max_distance(gt_track_graph)
     dist_threshold = max_edge_distance * 2
