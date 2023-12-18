@@ -1,52 +1,8 @@
-import csv
-
 import networkx as nx
 import numpy as np
 
-
-def _convert_types(row):
-    """Helper function for loading the tracks csv with correct types
-    Designed for mskcc_confocal dataset.
-
-    Args:
-        row (dict): Row from csv.DictReader
-
-    Returns:
-        dict: Same row with the types converted from strings to ints/floats
-        for the appropriate keys.
-    """
-    int_vals = ["t", "cell_id", "parent_id", "track_id", "div_state"]
-    float_vals = ["z", "y", "x", "radius"]
-    for k in int_vals:
-        row[k] = int(row[k])
-    for k in float_vals:
-        row[k] = float(row[k])
-    return row
-
-
-def load_mskcc_confocal_tracks(tracks_path, frames=None):
-    """Load tracks from a csv to a networkx graph.
-    Args:
-        tracks_path (str): path to tracks file
-        frames (tuple): Tuple of start frame, end frame to limit the tracks to
-        these time points. Includes start frame, excludes end frame.
-    """
-    graph = nx.DiGraph()
-    with open(tracks_path, "r") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        # t	z	y	x	cell_id	parent_id	track_id	radius	name	div_state
-        for cell in reader:
-            cell = _convert_types(cell)
-            if frames:
-                time = cell["t"]
-                if time < frames[0] or time >= frames[1]:
-                    continue
-            cell_id = cell["cell_id"]
-            graph.add_node(cell["cell_id"], **cell)
-            parent_id = cell["parent_id"]
-            if parent_id != -1 and time > frames[0]:
-                graph.add_edge(parent_id, cell_id)
-    return graph
+from napari.layers import Graph as GraphLayer
+from napari_graph import UndirectedGraph
 
 
 def assign_tracklet_ids(graph):
@@ -132,3 +88,47 @@ def to_napari_tracks_layer(
         else:
             napari_edges[child_track_id] = [parent_track_id]
     return napari_data, napari_properties, napari_edges
+
+
+""" NapariGraph parameters to create UndirectedGraph
+Parameters
+    ----------
+    edges : ArrayLike
+        Nx2 array of pair of nodes (edges).
+    coords :
+        Optional array of spatial coordinates of nodes.
+    ndim : int
+        Number of spatial dimensions of graph.
+    n_nodes : int
+        Optional number of nodes to pre-allocate in the graph.
+    n_edges : int
+        Optional number of edges to pre-allocate in the graph.
+    """
+
+
+def get_location(node_data, loc_keys=("z", "y", "x")):
+    return [node_data[k] for k in loc_keys]
+
+
+def to_napari_graph_layer(graph, name):
+    """A function to convert a networkx graph into a Napari Graph layer"""
+    nx_id_to_napari_id = {}
+    napari_id_to_nx_id = {}
+    napari_id = 0
+    for nx_id in graph.nodes:
+        nx_id_to_napari_id[nx_id] = napari_id
+        napari_id_to_nx_id[napari_id] = nx_id
+        napari_id += 1
+    num_nodes = napari_id
+
+    edges = [[nx_id_to_napari_id[s], nx_id_to_napari_id[t]] for s, t in graph.edges()]
+    coords = [
+        get_location(
+            graph.nodes[napari_id_to_nx_id[nap_id]], loc_keys=("t", "z", "y", "x")
+        )
+        for nap_id in range(num_nodes)
+    ]
+    ndim = 4
+    napari_graph = UndirectedGraph(edges=edges, coords=coords, ndim=ndim)
+    graph_layer = GraphLayer(data=napari_graph, name=name)
+    return graph_layer
