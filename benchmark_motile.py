@@ -69,10 +69,36 @@ def solve_with_motile(cand_graph):
 
     solver.add_costs(EdgeSelection(1, attribute="dist", constant=-20))
     solver.add_costs(Appear(30))
+    weights = solver.weights
+    print(f"Specified weights are {weights}")
+
     start_time = time.time()
     solution = solver.solve()
     print(f"Solution took {time.time() - start_time} seconds")
     return solution, solver
+
+
+def fit_weights(solver, max_iterations=5):
+    start_time = time.time()
+    solver.fit_weights(
+        gt_attribute="gt", regularizer_weight=0.01, max_iterations=max_iterations
+    )
+    optimal_weights = solver.weights
+    print(f"Optimal weights are {optimal_weights}")
+    solution = solver.solve()
+    print(f"Solution took {time.time() - start_time} seconds")
+    return solution, solver
+
+
+def add_gt_track(cand_graph, gt_track_graph):
+    connected_nodes = list(nx.weakly_connected_components(gt_track_graph))[0]
+    track = gt_track_graph.subgraph(connected_nodes)
+
+    for node_i, node_j in track.edges():
+        cand_graph.nodes[node_i]["gt"] = True
+        cand_graph.nodes[node_j]["gt"] = True
+        cand_graph.edges[(node_i, node_j)]["gt"] = True
+    return cand_graph
 
 
 def get_solution_nx_graph(solution, solver):
@@ -111,7 +137,7 @@ if __name__ == "__main__":
     DATA_PATH = Path(config["base"]).expanduser()
     TRACKS_PATH = DATA_PATH / config["tracks"]
 
-    gt_track_graph = load_mskcc_confocal_tracks(TRACKS_PATH, frames=(0, 250))
+    gt_track_graph = load_mskcc_confocal_tracks(TRACKS_PATH, frames=(0, 20))
     print(f"GT nodes: {gt_track_graph.number_of_nodes()}")
     print(f"GT edges: {gt_track_graph.number_of_edges()}")
 
@@ -126,15 +152,20 @@ if __name__ == "__main__":
 
     # Create candidate graph by adding edges from t to t+1 within a distance threshold
     cand_graph = create_candidate_graph(nodes_only, dist_threshold)
+    motile_cand_graph = TrackGraph(cand_graph)
+    solution, solver = solve_with_motile(motile_cand_graph)
+    solution_nx_graph = get_solution_nx_graph(solution, solver)
+    evaluate_with_traccuracy(gt_track_graph, solution_nx_graph)
 
-    solution, solver = solve_with_motile(cand_graph)
+    # Optional stuff
+    # Learn weights with SSVM (with small portion of GT)
+
+    motile_cand_graph = add_gt_track(motile_cand_graph, gt_track_graph)
+    solution, solver = fit_weights(solver)
 
     solution_nx_graph = get_solution_nx_graph(solution, solver)
-
     evaluate_with_traccuracy(gt_track_graph, solution_nx_graph)
 
 
-# # Optional stuff
-# - learn weights with ssvm (with small portion of GT)
 # - add fake node score (random from .5 to 1, or something)
 # - add jitter to node locations/dropout/add extra nodes
