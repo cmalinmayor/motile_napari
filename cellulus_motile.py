@@ -17,9 +17,20 @@ from traccuracy import TrackingGraph
 from traccuracy.matchers import CTCMatcher
 from traccuracy.metrics import CTCMetrics, DivisionMetrics
 from traccuracy.loaders import load_ctc_data
+import logging
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(name)s %(levelname)-8s %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# logger.setLevel(logging.DEBUG)
+# logging.getLogger('traccuracy.matchers._ctc').setLevel(logging.DEBUG)
 
 
-def get_cand_graph_from_segmentation(segmentation, max_edge_distance):
+def get_cand_graph_from_segmentation(
+    segmentation, max_edge_distance, pos_labels=["y", "x"]
+):
     """_summary_
 
     Args:
@@ -29,20 +40,20 @@ def get_cand_graph_from_segmentation(segmentation, max_edge_distance):
     node_frame_dict = (
         {}
     )  # construct a dictionary from time frame to node_id for efficiency
-    labels = ["z", "y", "x"]
-    for t in len(segmentation):
+    cand_graph = nx.DiGraph()
+
+    for t in range(len(segmentation)):
         nodes_in_frame = []
         props = regionprops(segmentation[t])
-        cand_graph = nx.DiGraph()
         for i, regionprop in enumerate(props):
             node_id = f"{t}_{i}"
             attrs = {
                 "t": t,
-                "label": regionprop.label,
+                "segmentation_id": regionprop.label,
                 "area": regionprop.area,
             }
             centroid = regionprop.centroid  # [z,] y, x
-            for label, value in zip(labels[::-1], centroid[::-1]):
+            for label, value in zip(pos_labels, centroid):
                 attrs[label] = value
             cand_graph.add_node(node_id, **attrs)
             nodes_in_frame.append(node_id)
@@ -56,13 +67,18 @@ def get_cand_graph_from_segmentation(segmentation, max_edge_distance):
         if frame + 1 not in node_frame_dict:
             continue
         next_nodes = node_frame_dict[frame + 1]
-        next_locs = [get_location(cand_graph.nodes[n]) for n in next_nodes]
+        next_locs = [
+            get_location(cand_graph.nodes[n], loc_keys=pos_labels) for n in next_nodes
+        ]
         for node in node_frame_dict[frame]:
-            loc = get_location(cand_graph.nodes[node])
+            loc = get_location(cand_graph.nodes[node], loc_keys=pos_labels)
             for next_id, next_loc in zip(next_nodes, next_locs):
                 dist = math.dist(next_loc, loc)
+                attrs = {
+                    "dist": dist,
+                }
                 if dist < max_edge_distance:
-                    cand_graph.add_edge(node, next_id, dist=dist)
+                    cand_graph.add_edge(node, next_id, **attrs)
 
     print(f"Candidate edges: {cand_graph.number_of_edges()}")
     return cand_graph
@@ -117,11 +133,14 @@ def get_solution_nx_graph(solution, solver):
 
 
 def evaluate_with_traccuracy(ds_name, ctc_data_path, solution_graph, solution_seg):
-    gt_tracking_graph = load_ctc_data(ctc_data_path, name=ds_name)
-    matcher = CTCMatcher()
-    matched = matcher.compute_mapping(
-        gt_tracking_graph, TrackingGraph(solution_graph, segmentation=solution_seg)
+    gt_tracking_graph = load_ctc_data(
+        ctc_data_path, track_path=ctc_data_path / "man_track.txt"
     )
+    pred_tracking_graph = TrackingGraph(solution_graph, segmentation=solution_seg)
+    for node in pred_tracking_graph.nodes:
+        assert pred_tracking_graph.nodes[node][pred_tracking_graph.label_key]
+    matcher = CTCMatcher()
+    matched = matcher.compute_mapping(gt_tracking_graph, pred_tracking_graph)
 
     ctc_metrics = CTCMetrics().compute(matched)
     pprint.pprint(ctc_metrics)
@@ -134,7 +153,7 @@ if __name__ == "__main__":
     config_file = "configs/cellulus_hela.toml"
     config = toml.load(config_file)
     cellulus_data_path = Path(config["zarr_dataset"])
-    ctc_data_path = config["ctc_format"]
+    ctc_data_path = Path(config["ctc_format"])
     edge_dist_threshold = config["edge_distance_threshold"]
     ds_name = config["ds_name"]
 
@@ -144,6 +163,7 @@ if __name__ == "__main__":
     print(f"Image shape: {images.shape}")
     print(f"Segmentation shape: {segmentation.shape}")
     cand_graph = get_cand_graph_from_segmentation(segmentation, edge_dist_threshold)
+    print(f"Cand graph has {cand_graph.number_of_nodes()} nodes")
 
     solution, solver = solve_with_motile(cand_graph)
 
