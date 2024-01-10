@@ -4,6 +4,7 @@ import networkx as nx
 import numpy as np
 import time
 from skimage.io import imread
+import zarr
 
 
 def load_mskcc_confocal_tracks(tracks_path, frames=None):
@@ -69,3 +70,19 @@ def load_mskcc_confocal_images(image_path, image_filename, frames=None):
     print(images.shape)
     print(images.dtype)
     return images
+
+
+def load_cellulus_results(
+    path_to_zarr,
+    image_group="test/raw",
+    seg_group="post-processed-segmentation-run_2",
+    seg_channel=0,
+):
+    base = zarr.open(path_to_zarr, "r")
+    images = base[image_group]
+    segmentation = base[seg_group][
+        :, seg_channel
+    ]  # orginally t, c, z, y, x. want to select channel
+
+    # should return (t, z, y, x) for both
+    return np.squeeze(images), np.squeeze(segmentation)

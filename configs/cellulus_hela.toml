@@ -1,0 +1,4 @@
+ds_name = "Fluo-N2DL-HeLa_02"
+zarr_dataset = "/groups/funke/home/lalitm/cellulus/experiments/data/Fluo-N2DL-HeLa.zarr"
+ctc_format = "/nrs/funke/data/Fluo-N2DL-HeLa/02_GT/TRA"
+edge_distance_threshold = 50
