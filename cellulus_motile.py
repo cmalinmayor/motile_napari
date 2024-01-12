@@ -1,5 +1,6 @@
 import math
 from pathlib import Path
+import numpy as np
 
 from motile import Solver, TrackGraph
 from motile.constraints import MaxChildren, MaxParents
@@ -12,7 +13,7 @@ from tqdm import tqdm
 import pprint
 import time
 from skimage.measure import regionprops
-
+import tifffile
 from traccuracy import TrackingGraph
 from traccuracy.matchers import CTCMatcher
 from traccuracy.metrics import CTCMetrics, DivisionMetrics
@@ -46,7 +47,7 @@ def get_cand_graph_from_segmentation(
         nodes_in_frame = []
         props = regionprops(segmentation[t])
         for i, regionprop in enumerate(props):
-            node_id = f"{t}_{i}"
+            node_id = f"{t}_{regionprop.label}"  # TODO: previously node_id= f"{t}_{i}"
             attrs = {
                 "t": t,
                 "segmentation_id": regionprop.label,
