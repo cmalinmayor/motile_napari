@@ -75,7 +75,7 @@ def load_mskcc_confocal_images(image_path, image_filename, frames=None):
 def load_cellulus_results(
     path_to_zarr,
     image_group="test/raw",
-    seg_group="post-processed-segmentation-run_2",
+    seg_group="post-processed-segmentation",
     seg_channel=0,
 ):
     base = zarr.open(path_to_zarr, "r")
