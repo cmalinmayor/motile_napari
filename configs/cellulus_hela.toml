@@ -1,4 +1,9 @@
 ds_name = "Fluo-N2DL-HeLa_02"
-zarr_dataset = "/groups/funke/home/lalitm/cellulus/experiments/data/Fluo-N2DL-HeLa.zarr"
-ctc_format = "/nrs/funke/data/Fluo-N2DL-HeLa/02_GT/TRA"
+zarr_dataset = "/Volumes/funke$/lalitm/cellulus/experiments/data/science_meet/Fluo-N2DL-HeLa.zarr"
+dataset_name = "post-processed-segmentation"
+# "/groups/funke/home/lalitm/cellulus/experiments/data/Fluo-N2DL-HeLa.zarr"
+ctc_format = "/Volumes/data/Fluo-N2DL-HeLa/02_GT/TRA"
+#/nrs/funke/data/Fluo-N2DL-HeLa/02_GT/TRA
 edge_distance_threshold = 50
+output_tifs_directory = "/Users/lalitm/Desktop/SEG/Fluo-N2DL-HeLa/02_RES_track/" 
+
