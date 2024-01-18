@@ -11,7 +11,7 @@ pip install 'git+https://github.com/napari/napari-graph'
 ## Install Motile
 ```sh
 conda install -c conda-forge -c funkelab -c gurobi ilpy
-pip install git+https://github.com/funkelab/motile.git
+pip install git+https://github.com/funkelab/motile.git@1722dabd6e314d349ff50d46fd61abbdd9c17845
 ```
 
 ## Install Traccuracy
