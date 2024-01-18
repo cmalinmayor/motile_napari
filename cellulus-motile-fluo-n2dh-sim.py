@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_cand_graph_from_segmentation(
-    segmentation, max_edge_distance, pos_labels=["y", "x"]
+    segmentation, max_edge_distance, pos_labels=["y", "x"], w_a = 30
 ):
     """_summary_
 
@@ -50,6 +50,7 @@ def get_cand_graph_from_segmentation(
             node_id = f"{t}_{regionprop.label}"  # TODO: previously node_id= f"{t}_{i}"
             attrs = {
                 "t": t,
+                "cost_appear": 0 if t==0 else w_a,
                 "segmentation_id": regionprop.label,
                 "area": regionprop.area,
             }
@@ -101,15 +102,15 @@ def get_max_distance(graph):
     return max_dist
 
 
-def solve_with_motile(cand_graph):
+def solve_with_motile(cand_graph, w_e = 1, b_e = -20):
     motile_cand_graph = TrackGraph(cand_graph)
     solver = Solver(motile_cand_graph)
 
     solver.add_constraints(MaxChildren(2))
     solver.add_constraints(MaxParents(1))
 
-    solver.add_costs(EdgeSelection(1, attribute="dist", constant=-20))
-    solver.add_costs(Appear(30))
+    solver.add_costs(EdgeSelection(w_e, attribute="dist", constant=b_e))
+    solver.add_costs(Appear(weight = 1, attribute="cost_appear"))
 
     start_time = time.time()
     solution = solver.solve()
@@ -246,7 +247,7 @@ def save_result_tifs_res_track(solution_nx_graph, segmentation, output_tif_dir):
 
 
 if __name__ == "__main__":
-    config_file = "configs/cellulus_hela.toml"
+    config_file = "configs/cellulus_sim2d.toml"
     config = toml.load(config_file)
     cellulus_data_path = Path(config["zarr_dataset"])
     cellulus_dataset_name = config["dataset_name"]
@@ -262,10 +263,15 @@ if __name__ == "__main__":
     )
     print(f"Image shape: {images.shape}")
     print(f"Segmentation shape: {segmentation.shape}")
-    cand_graph = get_cand_graph_from_segmentation(segmentation, edge_dist_threshold)
+    # specify weights
+    w_e = 1
+    b_e = -20
+    w_a = 30
+    
+    cand_graph = get_cand_graph_from_segmentation(segmentation, edge_dist_threshold, w_a = w_a)
     print(f"Cand graph has {cand_graph.number_of_nodes()} nodes")
 
-    solution, solver = solve_with_motile(cand_graph)
+    solution, solver = solve_with_motile(cand_graph, w_e = w_e, b_e = b_e)
     solution_nx_graph = get_solution_nx_graph(solution, solver)
     # evaluate_with_traccuracy(ds_name, ctc_data_path, solution_nx_graph, segmentation)
     new_mapping, res_track, new_segmentations = save_result_tifs_res_track(
@@ -274,3 +280,5 @@ if __name__ == "__main__":
 
 
 print(f"Default solver weights are:\n{solver.weights}")
+
+
