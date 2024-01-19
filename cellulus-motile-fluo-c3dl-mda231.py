@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_cand_graph_from_segmentation(
-    segmentation, max_edge_distance, pos_labels=["y", "x"]
+    segmentation, max_edge_distance, pos_labels=["y", "x"], w_a=30
 ):
     """_summary_
 
@@ -50,6 +50,7 @@ def get_cand_graph_from_segmentation(
             node_id = f"{t}_{regionprop.label}"  # TODO: previously node_id= f"{t}_{i}"
             attrs = {
                 "t": t,
+                "cost_appear": 0 if t == 0 else w_a,
                 "segmentation_id": regionprop.label,
                 "area": regionprop.area,
             }
@@ -101,15 +102,15 @@ def get_max_distance(graph):
     return max_dist
 
 
-def solve_with_motile(cand_graph):
+def solve_with_motile(cand_graph, w_e=1, b_e=-20):
     motile_cand_graph = TrackGraph(cand_graph)
     solver = Solver(motile_cand_graph)
 
     solver.add_constraints(MaxChildren(2))
     solver.add_constraints(MaxParents(1))
 
-    solver.add_costs(EdgeSelection(1, attribute="dist", constant=-20))
-    solver.add_costs(Appear(30))
+    solver.add_costs(EdgeSelection(w_e, attribute="dist", constant=b_e))
+    solver.add_costs(Appear(weight=1, attribute="cost_appear"))
 
     start_time = time.time()
     solution = solver.solve()
@@ -246,7 +247,7 @@ def save_result_tifs_res_track(solution_nx_graph, segmentation, output_tif_dir):
 
 
 if __name__ == "__main__":
-    config_file = "configs/cellulus_hela.toml"
+    config_file = "configs/cellulus_fluo_c3dl_mda231.toml"
     config = toml.load(config_file)
     cellulus_data_path = Path(config["zarr_dataset"])
     cellulus_dataset_name = config["dataset_name"]
@@ -262,79 +263,23 @@ if __name__ == "__main__":
     )
     print(f"Image shape: {images.shape}")
     print(f"Segmentation shape: {segmentation.shape}")
-    cand_graph = get_cand_graph_from_segmentation(segmentation, edge_dist_threshold)
-    print(f"Cand graph has {cand_graph.number_of_nodes()} nodes")
+    # specify weights
+    w_e = 1
+    b_e = -20
+    w_a = 30
 
-    solution, solver = solve_with_motile(cand_graph)
+    cand_graph = get_cand_graph_from_segmentation(
+        segmentation, edge_dist_threshold, w_a=w_a
+    )
+    print(f"Cand graph has {cand_graph.number_of_nodes()} nodes")
+    print(f"Cand graph has {cand_graph.number_of_edges()} edges")
+
+    solution, solver = solve_with_motile(cand_graph, w_e=w_e, b_e=b_e)
     solution_nx_graph = get_solution_nx_graph(solution, solver)
     # evaluate_with_traccuracy(ds_name, ctc_data_path, solution_nx_graph, segmentation)
-    # new_mapping, res_track, new_segmentations = save_result_tifs_res_track(
-    #    solution_nx_graph, segmentation, output_tifs_directory
-    # )
+    new_mapping, res_track, new_segmentations = save_result_tifs_res_track(
+        solution_nx_graph, segmentation, output_tifs_directory
+    )
 
 
 print(f"Default solver weights are:\n{solver.weights}")
-
-# ## SSVM
-
-# Select a lineage tree randomly from the ground truth. <br>
-# Here, we select the zeroth weakly conncted graph!
-
-gt_track_graph = load_ctc_data(
-    ctc_data_path, track_path=ctc_data_path / "man_track.txt"
-)
-print(f"Number of GT nodes: {len(gt_track_graph.nodes())}")
-print(f"Number of GT edges: {len(gt_track_graph.edges())}")
-
-connected_nodes = list(nx.weakly_connected_components(gt_track_graph.graph))[0]
-track = gt_track_graph.graph.subgraph(connected_nodes)
-print(f"Selected subgraph is a {track}")
-
-# Next, let's go over the nodes of this track and find the corresponding segmentation id. Set that to `True`
-
-gt_mask_names = list((ctc_data_path).glob("*.tif"))
-for node_in, node_out in track.edges():
-    id_in, t_in = node_in.split("_")
-    id_out, t_out = node_out.split("_")
-    t_in, id_in = int(t_in), int(id_in)
-    t_out, id_out = int(t_out), int(id_out)
-    ma_gt_t = tifffile.imread(gt_mask_names[t_in])
-    ma_gt_tp1 = tifffile.imread(gt_mask_names[t_out])
-    y_t, x_t = np.where(ma_gt_t == id_in)
-    y_tp1, x_tp1 = np.where(ma_gt_tp1 == id_out)
-    ids_t = np.unique(segmentation[t_in][y_t, x_t])
-    ids_t = ids_t[ids_t != 0]
-    ids_tp1 = np.unique(segmentation[t_out][y_tp1, x_tp1])
-    ids_tp1 = ids_tp1[ids_tp1 != 0]
-    if len(ids_t) == 1 and len(ids_tp1) == 1:
-        cand_graph.nodes[str(t_in) + "_" + str(ids_t[0])]["gt"] = True
-        cand_graph.nodes[str(t_out) + "_" + str(ids_tp1[0])]["gt"] = True
-        cand_graph.edges[
-            (str(t_in) + "_" + str(ids_t[0]), str(t_out) + "_" + str(ids_tp1[0]))
-        ]["gt"] = True
-
-
-def fit_weights(solver, regularizer_weight=0.01, max_iterations=5):
-    start_time = time.time()
-    solver.fit_weights(
-        gt_attribute="gt",
-        regularizer_weight=regularizer_weight,
-        max_iterations=max_iterations,
-    )
-    optimal_weights = solver.weights
-    print(f"Optimal weights are {optimal_weights}")
-    solution = solver.solve()
-    print(f"Solution took {time.time() - start_time} seconds")
-    return solution, solver
-
-
-regularizer_weight = 0.01
-max_iterations = 5
-solution, solver = fit_weights(solver, regularizer_weight, max_iterations)
-solution_nx_graph = get_solution_nx_graph(solution, solver)
-
-print(
-    f"Solver weights after SSVM and using regularization {regularizer_weight} is \n{solver.weights}"
-)
-
-
