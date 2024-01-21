@@ -1,6 +1,5 @@
 import math
 from pathlib import Path
-import numpy as np
 
 from motile import Solver, TrackGraph
 from motile.constraints import MaxChildren, MaxParents
@@ -13,12 +12,12 @@ from tqdm import tqdm
 import pprint
 import time
 from skimage.measure import regionprops
-import tifffile
 from traccuracy import TrackingGraph
 from traccuracy.matchers import CTCMatcher
 from traccuracy.metrics import CTCMetrics, DivisionMetrics
 from traccuracy.loaders import load_ctc_data
 import logging
+from saving_utils import save_result_tifs_res_track
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)-8s %(message)s"
@@ -30,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_cand_graph_from_segmentation(
-    segmentation, max_edge_distance, pos_labels=["y", "x"], w_a=30
+    segmentation, max_edge_distance, pos_labels=["y", "x"], f_a=30
 ):
     """_summary_
 
@@ -50,7 +49,7 @@ def get_cand_graph_from_segmentation(
             node_id = f"{t}_{regionprop.label}"  # TODO: previously node_id= f"{t}_{i}"
             attrs = {
                 "t": t,
-                "cost_appear": 0 if t == 0 else w_a,
+                "cost_appear": 0 if t == 0 else f_a,
                 "segmentation_id": regionprop.label,
                 "area": regionprop.area,
             }
@@ -152,100 +151,6 @@ def evaluate_with_traccuracy(ds_name, ctc_data_path, solution_graph, solution_se
     pprint.pprint(div_metrics)
 
 
-def save_result_tifs_res_track(solution_nx_graph, segmentation, output_tif_dir):
-    tracked_masks = np.zeros_like(segmentation)
-    new_mapping = {}  # <t_id> in segmentation mask: id in tracking mask
-    res_track = {}  # id in tracking mask: t_start, t_end, parent_id in tracking mask
-    id_counter = 1
-    for in_node, out_node in tqdm(solution_nx_graph.edges()):
-        t_in, id_in = in_node.split("_")
-        t_out, id_out = out_node.split("_")
-        t_in, id_in = int(t_in), int(id_in)
-        t_out, id_out = int(t_out), int(id_out)
-        num_out_edges = len(solution_nx_graph.out_edges(in_node))
-        if num_out_edges == 1:
-            if in_node in new_mapping.keys():
-                # i.e. continuation of an existing edge
-                res_track[new_mapping[in_node]][
-                    1
-                ] = t_out  # update the end time for this tracklet
-                tracked_masks[t_in][segmentation[t_in] == id_in] = new_mapping[in_node]
-                new_mapping[out_node] = new_mapping[in_node]
-                tracked_masks[t_out][segmentation[t_out] == id_out] = new_mapping[
-                    out_node
-                ]
-            else:
-                # i.e. start of a new edge
-                res_track[id_counter] = [t_in, t_out, 0]
-                new_mapping[in_node] = id_counter
-                new_mapping[out_node] = id_counter
-                tracked_masks[t_in][segmentation[t_in] == id_in] = id_counter
-                tracked_masks[t_out][segmentation[t_out] == id_out] = id_counter
-                id_counter += 1
-        elif num_out_edges == 2:
-            out_edge1, out_edge2 = solution_nx_graph.out_edges(in_node)
-            _, out_node1 = out_edge1
-            _, out_node2 = out_edge2
-            t_out1, id_out1 = out_node1.split("_")
-            t_out1, id_out1 = int(t_out1), int(id_out1)
-            t_out2, id_out2 = out_node2.split("_")
-            t_out2, id_out2 = int(t_out2), int(id_out2)
-            if in_node in new_mapping.keys():
-                # i.e. in node was connected by one outgoing edge previously
-                res_track[new_mapping[in_node]][1] = t_in
-                tracked_masks[t_in][segmentation[t_in] == id_in] = new_mapping[in_node]
-                if out_node1 not in new_mapping:
-                    new_mapping[out_node1] = id_counter
-                    tracked_masks[t_out1][segmentation[t_out1] == id_out1] = id_counter
-                    res_track[id_counter] = [t_out1, t_out1, new_mapping[in_node]]
-                    id_counter += 1
-                if out_node2 not in new_mapping:
-                    new_mapping[out_node2] = id_counter
-                    tracked_masks[t_out2][segmentation[t_out2] == id_out2] = id_counter
-                    res_track[id_counter] = [t_out2, t_out2, new_mapping[in_node]]
-                    id_counter += 1
-            else:
-                res_track[id_counter] = [
-                    t_in,
-                    t_in,
-                    0,
-                ]  # since it divides immediately after
-                new_mapping[in_node] = id_counter
-                tracked_masks[t_in][segmentation[t_in] == id_in] = id_counter
-                id_counter += 1
-                if out_node1 not in new_mapping:
-                    new_mapping[out_node1] = id_counter
-                    tracked_masks[t_out1][segmentation[t_out1] == id_out1] = id_counter
-                    res_track[id_counter] = [t_out1, t_out1, new_mapping[in_node]]
-                    id_counter += 1
-                if out_node2 not in new_mapping:
-                    new_mapping[out_node2] = id_counter
-                    tracked_masks[t_out2][segmentation[t_out2] == id_out2] = id_counter
-                    res_track[id_counter] = [t_out2, t_out2, new_mapping[in_node]]
-                    id_counter += 1
-    # ensure that path where tifs will be saved, exists.
-    if Path(output_tif_dir).exists():
-        pass
-    else:
-        Path(output_tif_dir).mkdir()
-    # write tifs
-    for i in range(tracked_masks.shape[0]):
-        tifffile.imwrite(
-            Path(output_tif_dir) / ("mask" + str(i).zfill(3) + ".tif"),
-            tracked_masks[i].astype(np.uint16),
-        )
-    # write res_track.txt
-    res_track_list = []
-    for key in res_track.keys():
-        res_track_list.append(
-            [key, res_track[key][0], res_track[key][1], res_track[key][2]]
-        )
-    np.savetxt(
-        Path(output_tif_dir) / ("res_track.txt"), np.asarray(res_track_list), fmt="%i"
-    )
-    return new_mapping, res_track, tracked_masks
-
-
 if __name__ == "__main__":
     config_file = "configs/cellulus_hela.toml"
     config = toml.load(config_file)
@@ -263,13 +168,17 @@ if __name__ == "__main__":
     )
     print(f"Image shape: {images.shape}")
     print(f"Segmentation shape: {segmentation.shape}")
+    
     # specify weights
     w_e = 1
     b_e = -20
-    w_a = 30
+    
+    # specify attribute for appearance
+    f_a = 30
 
+    # note now there would be 4 weights which would be needed (w_e, b_e, w_a=1, b_a=0)
     cand_graph = get_cand_graph_from_segmentation(
-        segmentation, edge_dist_threshold, w_a=w_a
+        segmentation, edge_dist_threshold, f_a=f_a
     )
     print(f"Cand graph has {cand_graph.number_of_nodes()} nodes")
 
@@ -279,10 +188,10 @@ if __name__ == "__main__":
     # new_mapping, res_track, new_segmentations = save_result_tifs_res_track(
     #     solution_nx_graph, segmentation, output_tifs_directory
     # )
+    print(f"Value of objective function after optimisation is {solver.solution.get_value()}")
 
 
 print(f"Default solver weights are:\n{solver.weights}")
-
 
 # ## SSVM
 
@@ -296,62 +205,60 @@ print(f"Number of GT nodes: {len(gt_track_graph.nodes())}")
 print(f"Number of GT edges: {len(gt_track_graph.edges())}")
 
 connected_nodes = list(nx.weakly_connected_components(gt_track_graph.graph))[0]
-print(f"connected nodes are {connected_nodes}")
 track = gt_track_graph.graph.subgraph(connected_nodes)
-print(f"Selected subgraph is a {track}")
 
 # Next, let's go over the nodes of this track and find the corresponding segmentation id. Set that to `True`
 
+import tifffile
+import numpy as np
 gt_mask_names = list((ctc_data_path).glob("*.tif"))
-for node_in, node_out in track.edges():
-    id_in, t_in = node_in.split("_")
-    id_out, t_out = node_out.split("_")
+for gt_node_in, gt_node_out in track.edges():
+    id_in, t_in = gt_node_in.split("_")
+    id_out, t_out = gt_node_out.split("_")
+    
     t_in, id_in = int(t_in), int(id_in)
     t_out, id_out = int(t_out), int(id_out)
-    ma_gt_t = tifffile.imread(gt_mask_names[t_in])
-    ma_gt_tp1 = tifffile.imread(gt_mask_names[t_out])
-    y_t, x_t = np.where(ma_gt_t == id_in)
-    y_tp1, x_tp1 = np.where(ma_gt_tp1 == id_out)
-    ids_t = np.unique(segmentation[t_in][y_t, x_t])
-    ids_t = ids_t[ids_t != 0]
-    ids_tp1 = np.unique(segmentation[t_out][y_tp1, x_tp1])
-    ids_tp1 = ids_tp1[ids_tp1 != 0]
+    
+    ma_gt_t_in = tifffile.imread(gt_mask_names[t_in])
+    ma_gt_t_out = tifffile.imread(gt_mask_names[t_out])
+
+    y_t_in, x_t_in = np.where(ma_gt_t_in == id_in)
+    y_t_out, x_t_out = np.where(ma_gt_t_out == id_out)
+
+    ids_t_in = np.unique(segmentation[t_in][y_t_in, x_t_in])
+    ids_t_in = ids_t_in[ids_t_in != 0]
+
+    ids_t_out = np.unique(segmentation[t_out][y_t_out, x_t_out])
+    ids_t_out = ids_t_out[ids_t_out != 0]
+
     # Set the corresponding nodes and edges in candidate graph to be True
     # Also set the other outgoing edges from these nodes to be False
-    if len(ids_t) == 1 and len(ids_tp1) == 1:
-        cand_graph.nodes[str(t_in) + "_" + str(ids_t[0])]["gt"] = True
-        cand_graph.nodes[str(t_out) + "_" + str(ids_tp1[0])]["gt"] = True
-        edges = cand_graph.out_edges(str(t_in) + "_" + str(ids_t[0]))
+    if len(ids_t_in) == 1 and len(ids_t_out) == 1:
+        node_id_in = str(t_in) + "_" + str(ids_t_in[0])
+        node_id_out = str(t_out) + "_" + str(ids_t_out[0])
+        
+        cand_graph.nodes[node_id_in]["gt"] = True
+        cand_graph.nodes[node_id_out]["gt"] = True
+
+        edges = cand_graph.out_edges(node_id_in)
         for edge in edges:
-            in_node, out_node = edge
-            if len(gt_track_graph.graph.out_edges(node_in)) == 1:
-                if out_node == str(t_out) + "_" + str(ids_tp1[0]):
-                    cand_graph.edges[(str(t_in) + "_" + str(ids_t[0]), out_node)][
-                        "gt"
-                    ] = True
+            _, out_node = edge
+            if len(gt_track_graph.graph.out_edges(gt_node_in)) == 1:
+                if out_node == node_id_out:
+                    cand_graph.edges[(node_id_in, out_node)]["gt"] = True
+
                 else:
-                    cand_graph.edges[(str(t_in) + "_" + str(ids_t[0]), out_node)][
-                        "gt"
-                    ] = False
-            elif len(gt_track_graph.graph.out_edges(node_in)) == 2:
-                if out_node == str(t_out) + "_" + str(ids_tp1[0]):
-                    cand_graph.edges[(str(t_in) + "_" + str(ids_t[0]), out_node)][
-                        "gt"
-                    ] = True
+                    cand_graph.edges[(node_id_in, out_node)]["gt"] = False
+            elif len(gt_track_graph.graph.out_edges(gt_node_in)) == 2:
+                if out_node == node_id_out:
+                    cand_graph.edges[(node_id_in, out_node)]["gt"] = True
                 elif (
-                    "gt"
-                    in cand_graph.edges[
-                        (str(t_in) + "_" + str(ids_t[0]), out_node)
-                    ].keys()
-                    and cand_graph.edges[(str(t_in) + "_" + str(ids_t[0]), out_node)][
-                        "gt"
-                    ]
+                    "gt" in cand_graph.edges[(node_id_in, out_node)].keys()
+                    and cand_graph.edges[(node_id_in, out_node)]["gt"]
                 ):
                     pass  # must be the other daughter which is already assigned True
                 else:
-                    cand_graph.edges[(str(t_in) + "_" + str(ids_t[0]), out_node)][
-                        "gt"
-                    ] = False
+                    cand_graph.edges[(node_id_in, out_node)]["gt"] = False
 
 
 def fit_weights(solver, regularizer_weight=0.01, max_iterations=5):
