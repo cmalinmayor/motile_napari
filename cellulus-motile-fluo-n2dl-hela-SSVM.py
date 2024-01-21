@@ -18,6 +18,8 @@ from traccuracy.metrics import CTCMetrics, DivisionMetrics
 from traccuracy.loaders import load_ctc_data
 import logging
 from saving_utils import save_result_tifs_res_track
+import numpy as np
+import tifffile
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)-8s %(message)s"
@@ -197,8 +199,7 @@ print(f"Default solver weights are:\n{solver.weights}")
 
 # ## SSVM
 
-# Select a lineage tree randomly from the ground truth. <br>
-# Here, we select the zeroth weakly connected graph!
+# Let's use annotations on the first five frames. This corresponds to using 5/92 ~ 5 % of the annotations.
 
 gt_track_graph = load_ctc_data(
     ctc_data_path, track_path=ctc_data_path / "man_track.txt"
@@ -206,61 +207,58 @@ gt_track_graph = load_ctc_data(
 print(f"Number of GT nodes: {len(gt_track_graph.nodes())}")
 print(f"Number of GT edges: {len(gt_track_graph.edges())}")
 
-connected_nodes = list(nx.weakly_connected_components(gt_track_graph.graph))[0]
-track = gt_track_graph.graph.subgraph(connected_nodes)
-
-# Next, let's go over the nodes of this track and find the corresponding segmentation id. Set that to `True`
-
-import tifffile
-import numpy as np
+connected_nodes_list = list(nx.weakly_connected_components(gt_track_graph.graph))
 gt_mask_names = list((ctc_data_path).glob("*.tif"))
-for gt_node_in, gt_node_out in track.edges():
-    id_in, t_in = gt_node_in.split("_")
-    id_out, t_out = gt_node_out.split("_")
+
+for i in range(len(connected_nodes_list)):
+    track = gt_track_graph.graph.subgraph(connected_nodes[i])
+    for gt_node_in, gt_node_out in track.edges():
+        id_in, t_in = gt_node_in.split("_")
+        id_out, t_out = gt_node_out.split("_")
     
-    t_in, id_in = int(t_in), int(id_in)
-    t_out, id_out = int(t_out), int(id_out)
+        t_in, id_in = int(t_in), int(id_in)
+        t_out, id_out = int(t_out), int(id_out)
+        if t_in < 5:
+            ma_gt_t_in = tifffile.imread(gt_mask_names[t_in])
+            ma_gt_t_out = tifffile.imread(gt_mask_names[t_out])
     
-    ma_gt_t_in = tifffile.imread(gt_mask_names[t_in])
-    ma_gt_t_out = tifffile.imread(gt_mask_names[t_out])
-
-    y_t_in, x_t_in = np.where(ma_gt_t_in == id_in)
-    y_t_out, x_t_out = np.where(ma_gt_t_out == id_out)
-
-    ids_t_in = np.unique(segmentation[t_in][y_t_in, x_t_in])
-    ids_t_in = ids_t_in[ids_t_in != 0]
-
-    ids_t_out = np.unique(segmentation[t_out][y_t_out, x_t_out])
-    ids_t_out = ids_t_out[ids_t_out != 0]
-
-    # Set the corresponding nodes and edges in candidate graph to be True
-    # Also set the other outgoing edges from these nodes to be False
-    if len(ids_t_in) == 1 and len(ids_t_out) == 1:
-        node_id_in = str(t_in) + "_" + str(ids_t_in[0])
-        node_id_out = str(t_out) + "_" + str(ids_t_out[0])
+            y_t_in, x_t_in = np.where(ma_gt_t_in == id_in)
+            y_t_out, x_t_out = np.where(ma_gt_t_out == id_out)
+    
+            ids_t_in = np.unique(segmentation[t_in][y_t_in, x_t_in])
+            ids_t_in = ids_t_in[ids_t_in != 0]
+    
+            ids_t_out = np.unique(segmentation[t_out][y_t_out, x_t_out])
+            ids_t_out = ids_t_out[ids_t_out != 0]
+    
+            # Set the corresponding nodes and edges in candidate graph to be True
+            # Also set the other outgoing edges from these nodes to be False
+            if len(ids_t_in) == 1 and len(ids_t_out) == 1:
+                node_id_in = str(t_in) + "_" + str(ids_t_in[0])
+                node_id_out = str(t_out) + "_" + str(ids_t_out[0])
+                
+                cand_graph.nodes[node_id_in]["gt"] = True
+                cand_graph.nodes[node_id_out]["gt"] = True
         
-        cand_graph.nodes[node_id_in]["gt"] = True
-        cand_graph.nodes[node_id_out]["gt"] = True
-
-        edges = cand_graph.out_edges(node_id_in)
-        for edge in edges:
-            _, out_node = edge
-            if len(gt_track_graph.graph.out_edges(gt_node_in)) == 1:
-                if out_node == node_id_out:
-                    cand_graph.edges[(node_id_in, out_node)]["gt"] = True
-
-                else:
-                    cand_graph.edges[(node_id_in, out_node)]["gt"] = False
-            elif len(gt_track_graph.graph.out_edges(gt_node_in)) == 2:
-                if out_node == node_id_out:
-                    cand_graph.edges[(node_id_in, out_node)]["gt"] = True
-                elif (
-                    "gt" in cand_graph.edges[(node_id_in, out_node)].keys()
-                    and cand_graph.edges[(node_id_in, out_node)]["gt"]
-                ):
-                    pass  # must be the other daughter which is already assigned True
-                else:
-                    cand_graph.edges[(node_id_in, out_node)]["gt"] = False
+                edges = cand_graph.out_edges(node_id_in)
+                for edge in edges:
+                    _, out_node = edge
+                    if len(gt_track_graph.graph.out_edges(gt_node_in)) == 1:
+                        if out_node == node_id_out:
+                            cand_graph.edges[(node_id_in, out_node)]["gt"] = True
+    
+                        else:
+                            cand_graph.edges[(node_id_in, out_node)]["gt"] = False
+                    elif len(gt_track_graph.graph.out_edges(gt_node_in)) == 2:
+                        if out_node == node_id_out:
+                            cand_graph.edges[(node_id_in, out_node)]["gt"] = True
+                        elif (
+                            "gt" in cand_graph.edges[(node_id_in, out_node)].keys()
+                            and cand_graph.edges[(node_id_in, out_node)]["gt"]
+                        ):
+                            pass  # must be the other daughter which is already assigned True
+                        else:
+                            cand_graph.edges[(node_id_in, out_node)]["gt"] = False
 
 
 def fit_weights(solver, regularizer_weight=0.01, max_iterations=5):
