@@ -101,7 +101,7 @@ def get_max_distance(graph):
     return max_dist
 
 
-def solve_with_motile(cand_graph, w_e=1, b_e=-20):
+def solve_with_motile(cand_graph, w_e=1, b_e=-20, w_a=1, b_a=0):
     motile_cand_graph = TrackGraph(cand_graph)
     solver = Solver(motile_cand_graph)
 
@@ -109,7 +109,7 @@ def solve_with_motile(cand_graph, w_e=1, b_e=-20):
     solver.add_constraints(MaxParents(1))
 
     solver.add_costs(EdgeSelection(w_e, attribute="dist", constant=b_e))
-    solver.add_costs(Appear(weight=1, attribute="cost_appear"))
+    solver.add_costs(Appear(weight=w_a, attribute="cost_appear", constant=b_a))
 
     start_time = time.time()
     solution = solver.solve()
@@ -172,6 +172,8 @@ if __name__ == "__main__":
     # specify weights
     w_e = 1
     b_e = -20
+    w_a = 1
+    b_a = 0
     
     # specify attribute for appearance
     f_a = 30
@@ -182,7 +184,7 @@ if __name__ == "__main__":
     )
     print(f"Cand graph has {cand_graph.number_of_nodes()} nodes")
 
-    solution, solver = solve_with_motile(cand_graph, w_e=w_e, b_e=b_e)
+    solution, solver = solve_with_motile(cand_graph, w_e=w_e, b_e=b_e, w_a = w_a, b_a = b_a)
     solution_nx_graph = get_solution_nx_graph(solution, solver)
     # evaluate_with_traccuracy(ds_name, ctc_data_path, solution_nx_graph, segmentation)
     # new_mapping, res_track, new_segmentations = save_result_tifs_res_track(
